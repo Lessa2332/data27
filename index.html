@@ -1,1 +1,402 @@
-1
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Розумний Голосовий Журнал v2</title>
+    <script src="https://cdn.jsdelivr.net/npm/fuse.js@7.0.0/dist/fuse.min.js"></script>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: 'Segoe UI', Arial, sans-serif; background: #f4f7f6; color: #333; padding: 20px; }
+        .container { max-width: 560px; margin: 0 auto; background: white; padding: 30px; border-radius: 16px; box-shadow: 0 4px 25px rgba(0,0,0,0.08); }
+        h2 { text-align: center; font-size: 22px; margin-bottom: 20px; }
+
+        /* Бейджики */
+        .badge-row { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 18px; justify-content: center; }
+        .badge { font-size: 12px; padding: 4px 10px; border-radius: 99px; border: 1px solid; }
+        .badge-ai  { background: #e8f0fe; color: #1a56db; border-color: #a4c0f9; }
+        .badge-fz  { background: #e6f9f0; color: #0d7a4e; border-color: #6ddba8; }
+        .badge-off { background: #fff8e1; color: #9a6700; border-color: #ffd54f; }
+
+        /* API ключ */
+        .api-section { background: #f8f9fa; border-radius: 10px; padding: 14px; margin-bottom: 18px; }
+        .api-section label { font-size: 13px; color: #555; display: block; margin-bottom: 8px; }
+        .api-row { display: flex; gap: 8px; }
+        .api-row input { flex: 1; padding: 9px 12px; border-radius: 8px; border: 1px solid #ced4da; font-size: 14px; }
+        .api-row button { padding: 9px 16px; border-radius: 8px; border: 1px solid #ced4da; background: white; cursor: pointer; font-size: 14px; white-space: nowrap; }
+        .api-row button:hover { background: #f0f0f0; }
+        .api-status { font-size: 12px; margin-top: 6px; color: #888; }
+        .api-status.ok { color: #0d7a4e; }
+
+        /* Налаштування */
+        .settings-row { display: flex; gap: 12px; margin-bottom: 16px; }
+        .form-group { flex: 1; }
+        .form-group label { font-size: 13px; font-weight: 600; color: #495057; display: block; margin-bottom: 6px; }
+        .form-input { width: 100%; padding: 10px; font-size: 15px; border-radius: 8px; border: 1px solid #ced4da; background: white; }
+
+        /* Підказка */
+        .hint { background: #fff8e1; color: #856404; padding: 12px 14px; border-radius: 8px; margin-bottom: 18px; font-size: 13px; line-height: 1.5; }
+        .hint strong { display: block; margin-bottom: 4px; }
+
+        /* Кнопка мікрофон */
+        .mic-btn { width: 100%; padding: 18px; font-size: 18px; font-weight: bold; cursor: pointer; border: none; border-radius: 12px; background: #28a745; color: white; transition: all 0.2s; margin-bottom: 16px; }
+        .mic-btn.active  { background: #dc3545; animation: pulse 1.5s infinite; }
+        .mic-btn.busy    { background: #6c757d; cursor: not-allowed; }
+        @keyframes pulse {
+            0%   { box-shadow: 0 0 0 0 rgba(220,53,69,0.4); }
+            70%  { box-shadow: 0 0 0 12px rgba(220,53,69,0); }
+            100% { box-shadow: 0 0 0 0 rgba(220,53,69,0); }
+        }
+
+        /* Статус */
+        #status { font-size: 15px; color: #555; font-style: italic; min-height: 22px; margin-bottom: 8px; }
+        #status.error   { color: #dc3545; font-style: normal; font-weight: 600; }
+        #status.success { color: #198754; font-style: normal; font-weight: 600; }
+
+        /* Результат розпізнаного запису */
+        .result-card { background: #f0f9f4; border: 1px solid #a3d9b8; border-radius: 10px; padding: 14px; margin-top: 10px; display: none; }
+        .result-card .rc-row { display: flex; justify-content: space-between; font-size: 14px; padding: 3px 0; }
+        .result-card .rc-key { color: #555; }
+        .result-card .rc-val { font-weight: 600; color: #0d6e44; }
+
+        /* Офлайн черга */
+        .queue-section { margin-top: 18px; display: none; }
+        .queue-header { font-size: 13px; color: #888; margin-bottom: 8px; }
+        .queue-list { display: flex; flex-direction: column; gap: 6px; max-height: 180px; overflow-y: auto; }
+        .qi { display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; border-radius: 8px; border: 1px solid #e0e0e0; font-size: 13px; }
+        .qi.pending { border-color: #ffd54f; background: #fffde7; }
+        .qi.sent    { border-color: #a5d6a7; background: #f1f8f1; }
+        .qi-name { font-weight: 600; }
+        .qi-meta { color: #888; }
+        .dot { width: 8px; height: 8px; border-radius: 50%; margin-right: 8px; display: inline-block; }
+        .dot.pending { background: #f9a825; }
+        .dot.sent    { background: #43a047; }
+
+        /* Онлайн індикатор */
+        .online-pill { display: inline-block; font-size: 12px; padding: 3px 10px; border-radius: 99px; margin-bottom: 16px; }
+        .online-pill.on  { background: #e6f9f0; color: #0d7a4e; border: 1px solid #6ddba8; }
+        .online-pill.off { background: #fff3e0; color: #e65100; border: 1px solid #ffb74d; }
+    </style>
+</head>
+<body>
+<div class="container">
+    <h2>🎙️ Розумний Голосовий Журнал</h2>
+
+    <div class="badge-row">
+        <span class="badge badge-ai">🤖 Claude Haiku AI</span>
+        <span class="badge badge-fz">🔍 Fuzzy пошук</span>
+        <span class="badge badge-off" id="offline-badge">📶 Офлайн-буфер</span>
+    </div>
+
+    <span class="online-pill" id="online-pill">● Перевірка зв'язку...</span>
+
+    <!-- API ключ -->
+    <div class="api-section">
+        <label for="api-key-inp">🔑 Anthropic API ключ <em style="font-weight:normal;color:#aaa">(зберігається лише в браузері, не на сервері)</em></label>
+        <div class="api-row">
+            <input type="password" id="api-key-inp" placeholder="sk-ant-..." autocomplete="off">
+            <button onclick="saveApiKey()">Зберегти</button>
+        </div>
+        <div class="api-status" id="api-status">Ключ не введено — буде використано базовий режим</div>
+    </div>
+
+    <!-- Клас і дата -->
+    <div class="settings-row">
+        <div class="form-group">
+            <label for="class-select">Оберіть клас:</label>
+            <select id="class-select" class="form-input">
+                <option value="6-А">6-А клас</option>
+                <option value="6-Б">6-Б клас</option>
+                <option value="6-В">6-В клас</option>
+                <option value="6-Г">6-Г клас</option>
+                <option value="6-Д">6-Д клас</option>
+            </select>
+        </div>
+        <div class="form-group">
+            <label for="lesson-date">Дата оцінювання:</label>
+            <input type="date" id="lesson-date" class="form-input">
+        </div>
+    </div>
+
+    <!-- Підказка -->
+    <div class="hint" id="hint-box">
+        <strong>З AI-ключем — вільна мова:</strong>
+        "Левченко за сьогодні одинадцять, перша група" або "Бохонок, друга група, десять"
+    </div>
+
+    <button class="mic-btn" id="mic-btn" onclick="toggleMic()">🎙️ Запустити авторежим</button>
+
+    <div id="status">Очікування активації...</div>
+
+    <div class="result-card" id="result-card">
+        <div class="rc-row"><span class="rc-key">Прізвище</span><span class="rc-val" id="rc-surname">—</span></div>
+        <div class="rc-row"><span class="rc-key">Група</span><span class="rc-val" id="rc-group">—</span></div>
+        <div class="rc-row"><span class="rc-key">Оцінка</span><span class="rc-val" id="rc-grade">—</span></div>
+        <div class="rc-row"><span class="rc-key">Клас / Дата</span><span class="rc-val" id="rc-meta">—</span></div>
+    </div>
+
+    <div class="queue-section" id="queue-section">
+        <div class="queue-header">Черга записів: <strong id="queue-count">0</strong></div>
+        <div class="queue-list" id="queue-list"></div>
+    </div>
+</div>
+
+<script>
+const WEB_APP_URL   = "https://script.google.com/macros/s/AKfycbw1jjJFzgsmcrrn2nAtivH0QExLTfqvJ_MYOfiQ1SuwGj6BUB7H8eFA9lyZt3ktamuXvw/exec";
+const SECRET_TOKEN  = "Вчитель2026_СекретнийПароль!#";
+const QUEUE_KEY     = "vj_queue_v2";
+
+// ── DOM ──────────────────────────────────────────────────────────────────────
+const micBtn      = document.getElementById('mic-btn');
+const statusEl    = document.getElementById('status');
+const resultCard  = document.getElementById('result-card');
+const queueSec    = document.getElementById('queue-section');
+const queueList   = document.getElementById('queue-list');
+const queueCount  = document.getElementById('queue-count');
+const onlinePill  = document.getElementById('online-pill');
+const apiStatus   = document.getElementById('api-status');
+const dateInput   = document.getElementById('lesson-date');
+const classSelect = document.getElementById('class-select');
+
+// ── Стан ─────────────────────────────────────────────────────────────────────
+let isActive = false;
+let isBusy   = false;
+let recognition = null;
+let queue = [];
+
+// ── Ініціалізація ─────────────────────────────────────────────────────────────
+dateInput.value = new Date().toISOString().split('T')[0];
+loadQueue();
+renderQueue();
+checkOnline();
+setInterval(checkOnline,  5000);
+setInterval(flushQueue,  15000);
+
+const savedKey = sessionStorage.getItem('anthropic_key') || '';
+if (savedKey) {
+    document.getElementById('api-key-inp').value = savedKey;
+    apiStatus.textContent = '✅ Ключ збережено — використовується AI-парсинг';
+    apiStatus.className = 'api-status ok';
+    document.getElementById('hint-box').style.background = '#e8f5e9';
+}
+
+// ── API ключ ──────────────────────────────────────────────────────────────────
+function saveApiKey() {
+    const k = document.getElementById('api-key-inp').value.trim();
+    if (!k) { alert('Введіть ключ'); return; }
+    sessionStorage.setItem('anthropic_key', k);
+    apiStatus.textContent = '✅ Ключ збережено — використовується AI-парсинг';
+    apiStatus.className = 'api-status ok';
+    document.getElementById('hint-box').style.background = '#e8f5e9';
+    setStatus('AI-парсинг активовано', 'success');
+}
+
+function getApiKey() { return sessionStorage.getItem('anthropic_key') || document.getElementById('api-key-inp').value.trim(); }
+
+// ── Онлайн статус ─────────────────────────────────────────────────────────────
+function checkOnline() {
+    const on = navigator.onLine;
+    onlinePill.className = 'online-pill ' + (on ? 'on' : 'off');
+    onlinePill.textContent = on ? '● Онлайн' : '● Офлайн — записи збережено локально';
+    if (on) flushQueue();
+}
+
+// ── Мікрофон ──────────────────────────────────────────────────────────────────
+function toggleMic() {
+    if (!isActive) startMic(); else stopMic();
+}
+
+function startMic() {
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SR) { setStatus('Браузер не підтримує розпізнавання мови', 'error'); return; }
+
+    recognition = new SR();
+    recognition.lang = 'uk-UA';
+    recognition.interimResults = false;
+
+    recognition.onresult = handleResult;
+    recognition.onerror  = e => { if (e.error !== 'no-speech' && e.error !== 'aborted') setStatus('Помилка: ' + e.error, 'error'); };
+    recognition.onend    = () => { if (isActive && !isBusy) setTimeout(safeStart, 500); };
+
+    isActive = true;
+    micBtn.className = 'mic-btn active';
+    micBtn.textContent = '🔴 Мікрофон СЛУХАЄ... (зупинити)';
+    setStatus('Диктуйте учня...');
+    safeStart();
+}
+
+function stopMic() {
+    isActive = false;
+    if (recognition) recognition.stop();
+    micBtn.className = 'mic-btn';
+    micBtn.textContent = '🎙️ Запустити авторежим';
+    setStatus('Журнал зупинено.');
+}
+
+function safeStart() {
+    if (isActive && !isBusy) try { recognition.start(); } catch(e) {}
+}
+
+// ── Обробка голосу ────────────────────────────────────────────────────────────
+async function handleResult(event) {
+    const text = event.results[0][0].transcript;
+    setStatus('Почуто: «' + text + '»');
+    isBusy = true;
+    micBtn.className = 'mic-btn busy';
+    micBtn.textContent = '⏳ AI аналізує...';
+
+    const key = getApiKey();
+    const parsed = key ? await parseWithClaude(text, key) : parseWithRegex(text);
+
+    if (!parsed) {
+        setStatus(key
+            ? 'AI не зміг розпізнати. Спробуйте ще раз.'
+            : 'Не розпізнано. Скажіть: «Прізвище група N оцінка»', 'error');
+        speak('Повторіть будь ласка.');
+        isBusy = false;
+        if (isActive) { micBtn.className = 'mic-btn active'; micBtn.textContent = '🔴 Мікрофон СЛУХАЄ... (зупинити)'; }
+        return;
+    }
+
+    const record = {
+        id:        Date.now(),
+        surname:   parsed.surname,
+        group:     String(parsed.group),
+        grade:     String(parsed.grade),
+        date:      dateInput.value,
+        className: classSelect.value,
+        status:    'pending'
+    };
+
+    showResult(record);
+    enqueue(record);
+    setStatus(`✅ Записано: ${record.surname} ➔ гр.${record.group} ➔ ${record.grade}`, 'success');
+    speak(record.surname + ' записано.');
+
+    if (navigator.onLine) await sendRecord(record);
+
+    isBusy = false;
+    if (isActive) { micBtn.className = 'mic-btn active'; micBtn.textContent = '🔴 Мікрофон СЛУХАЄ... (зупинити)'; }
+}
+
+// ── AI парсинг ────────────────────────────────────────────────────────────────
+async function parseWithClaude(text, apiKey) {
+    try {
+        const resp = await fetch('https://api.anthropic.com/v1/messages', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'x-api-key': apiKey,
+                'anthropic-version': '2023-06-01',
+                'anthropic-dangerous-direct-browser-access': 'true'
+            },
+            body: JSON.stringify({
+                model: 'claude-haiku-4-5',
+                max_tokens: 200,
+                system: 'Ти — парсер шкільного журналу. З українського тексту вчителя вилучи: прізвище учня (рядок, перша велика літера), номер групи (ціле число 1-4), оцінку (ціле число 1-12). Поверни ТІЛЬКИ валідний JSON без markdown: {"surname":"...","group":N,"grade":N}. Якщо не можеш — {"error":"cannot parse"}.',
+                messages: [{ role: 'user', content: text }]
+            })
+        });
+        const data = await resp.json();
+        if (!data.content) return null;
+        const raw = data.content.map(c => c.text || '').join('').replace(/```json|```/g,'').trim();
+        const parsed = JSON.parse(raw);
+        if (parsed.error) return null;
+        return parsed;
+    } catch(e) {
+        return parseWithRegex(text);
+    }
+}
+
+// ── Базовий regex парсинг (без AI) ────────────────────────────────────────────
+function parseWithRegex(text) {
+    let t = text.toLowerCase().trim();
+    // Нормалізація числівників
+    const nums = {'нуль':0,'один':1,'одна':1,'два':2,'дві':2,'три':3,'чотири':4,'пять':5,"п'ять":5,'шість':6,'сім':7,'вісім':8,"дев'ять":9,'девять':9,'десять':10,'одинадцять':11,'дванадцять':12,'перш':1,'перший':1,'першої':1,'другої':2,'другий':2,'друг':2,'трет':3,'третій':3,'четверт':4,'чотир':4};
+    for (const [w,n] of Object.entries(nums)) t = t.replace(new RegExp('\\b'+w+'\\w*','g'), n);
+    // дефіс від Google: "2-10" → "2 10"
+    t = t.replace(/(\d+)\s*[-–—]\s*(\d+)/g,'$1 $2');
+
+    const kwIndex = (() => { for (const kw of ['група','групи','груп','гр ']) { const i = t.indexOf(kw); if(i!==-1) return {i, kw}; } return null; })();
+    if (!kwIndex) return null;
+
+    const surname = text.substring(0, kwIndex.i).trim();
+    if (!surname) return null;
+
+    const after  = t.substring(kwIndex.i + kwIndex.kw.length).trim();
+    const tokens = after.split(/\s+/);
+    if (tokens.length < 2) return null;
+
+    const group = parseInt(tokens[0]);
+    const grade = parseInt(tokens[1]);
+    if (isNaN(group) || isNaN(grade)) return null;
+
+    return { surname: surname.charAt(0).toUpperCase() + surname.slice(1), group, grade };
+}
+
+// ── UI ────────────────────────────────────────────────────────────────────────
+function setStatus(msg, type='') {
+    statusEl.className = type ? type : '';
+    statusEl.textContent = msg;
+}
+
+function showResult(r) {
+    resultCard.style.display = 'block';
+    document.getElementById('rc-surname').textContent = r.surname;
+    document.getElementById('rc-group').textContent   = 'Група ' + r.group;
+    document.getElementById('rc-grade').textContent   = r.grade;
+    document.getElementById('rc-meta').textContent    = r.className + ' · ' + r.date;
+}
+
+// ── Черга + офлайн-буфер ──────────────────────────────────────────────────────
+function enqueue(record) {
+    queue.push(record);
+    saveQueue();
+    renderQueue();
+}
+
+function saveQueue()  { try { localStorage.setItem(QUEUE_KEY, JSON.stringify(queue)); } catch(e){} }
+function loadQueue()  { try { const s = localStorage.getItem(QUEUE_KEY); if(s) queue = JSON.parse(s); } catch(e){} }
+
+function renderQueue() {
+    if (!queue.length) { queueSec.style.display='none'; return; }
+    queueSec.style.display = 'block';
+    queueCount.textContent = queue.length;
+    queueList.innerHTML = '';
+    [...queue].reverse().slice(0,12).forEach(r => {
+        const el = document.createElement('div');
+        el.className = 'qi ' + r.status;
+        el.innerHTML = `<span><span class="dot ${r.status}"></span><span class="qi-name">${r.surname}</span></span><span class="qi-meta">Гр.${r.group} · ${r.grade} · ${r.status==='sent'?'✅ Надіслано':'⏳ Очікує'}</span>`;
+        queueList.appendChild(el);
+    });
+}
+
+async function sendRecord(record) {
+    try {
+        await fetch(WEB_APP_URL, {
+            method: 'POST', mode: 'no-cors',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ...record, token: SECRET_TOKEN })
+        });
+        record.status = 'sent';
+        saveQueue();
+        renderQueue();
+    } catch(e) {}
+}
+
+async function flushQueue() {
+    if (!navigator.onLine) return;
+    for (const r of queue.filter(x => x.status==='pending')) await sendRecord(r);
+}
+
+// ── Озвучка ───────────────────────────────────────────────────────────────────
+function speak(msg) {
+    if (!window.speechSynthesis) return;
+    window.speechSynthesis.cancel();
+    const u = new SpeechSynthesisUtterance(msg);
+    u.lang = 'uk-UA';
+    window.speechSynthesis.speak(u);
+}
+</script>
+</body>
+</html>
